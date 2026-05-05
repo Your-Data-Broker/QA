@@ -15,4 +15,10 @@ class shape():
 
 r, g, b = int(input("r: ")), int(input("g: ")), int(input("b: "))
 
+rgb = [r,g,b]
 
+for y in range(res_y):
+    for x in range(res_x):
+        if img[y][x] == rgb:
+            print(x, y)
+            break
