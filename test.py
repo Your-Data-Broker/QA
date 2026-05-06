@@ -11,7 +11,6 @@ class shape():
         self.x_min = 0
         self.y_max = res_y
         self.y_min = 0
-        self.rgb = [256, 256, 256]
 
 r, g, b = int(input("r: ")), int(input("g: ")), int(input("b: "))
 
