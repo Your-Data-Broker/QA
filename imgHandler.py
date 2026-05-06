@@ -3,7 +3,7 @@ import numpy as np
 
 
 class ColorObjectDetector:
-    def init(self):
+    def __init__(self):
         # HSV
         self.color_ranges = {
             'red': [(np.array([0, 120, 70]), np.array([10, 255, 255]))],
@@ -62,7 +62,6 @@ class ColorObjectDetector:
 
                     # Малюємо контур та точку центру
                     cv2.drawContours(output_img, [cnt], -1, (0, 255, 0), 2)
-                    cv2.drawCircle()
 
             print(f"Знайдено {color_name} об'єктів: {color_count}")
 
@@ -76,8 +75,8 @@ class ColorObjectDetector:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-
 # Використання
-if name == "main":
+if __name__ == "__main__":
+    print("Hello there")
     detector = ColorObjectDetector()
-    detector.process_image('smth.JPG', target_colors=['purple'])
+    detector.process_image('testImg.jpg', target_colors=['purple'])
