@@ -8,31 +8,35 @@ class ColorObjectDetector:
         self.color_ranges = {
             "red": [(np.array([0, 120, 70]), np.array([10, 255, 255]))],
             "green": [(np.array([35, 50, 50]), np.array([85, 255, 255]))],
-            "blue": [(np.array([100, 150, 0]), np.array([140, 255, 255]))],
+            "blue": [(np.array([100, 150, 50]), np.array([124, 255, 255]))],
             "yellow": [(np.array([20, 100, 100]), np.array([30, 255, 255]))],
             "purple": [(np.array([125, 40, 40]), np.array([145, 255, 255]))],
             "pink": [(np.array([146, 40, 40]), np.array([165, 255, 255]))],
         }
 
     def process_image(self, image_path, target_colors):
-        img = cv2.imread(image_path)
-        if img is None:
+        originalImg = cv2.imread(image_path)
+        if originalImg is None:
             print(f"Помилка: Не вдалося завантажити {image_path}")
             return
 
+        # розмиття для точніших контурів
+
+        img = cv2.GaussianBlur(originalImg, (5, 5), 0)
+
         # конвертування BGR в HSV
+
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        output_img = img.copy()
-        total_count = 0
+        outputImg = originalImg.copy()
 
-        for color_name in target_colors:
-            if color_name not in self.color_ranges:
+        for colorName in target_colors:
+            if colorName not in self.color_ranges:
                 continue
 
             # Створення маски для обраного кольору
             mask = None
-            for lower, upper in self.color_ranges[color_name]:
+            for lower, upper in self.color_ranges[colorName]:
                 if mask is None:
                     mask = cv2.inRange(hsv, lower, upper)
                 else:
@@ -43,14 +47,13 @@ class ColorObjectDetector:
                 mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
-            color_count = 0
+            colorCount = 0
             for contour in contours:
                 # Ігнорування маленьких фігур
                 if cv2.contourArea(contour) < 500:
                     continue
 
-                color_count += 1
-                total_count += 1
+                colorCount += 1
 
                 # Визначення центру об'єкта (Moments)
                 M = cv2.moments(contour)
@@ -59,14 +62,14 @@ class ColorObjectDetector:
                     cy = int(M["m01"] / M["m00"])
 
                     # Малюємо контур та точку центру
-                    cv2.drawContours(output_img, [contour], -1, (0, 255, 0), 2)
-                    cv2.circle(output_img, (cx, cy), 5, (176, 255, 146), -1)
+                    cv2.drawContours(outputImg, [contour], -1, (0, 255, 0), 2)
+                    cv2.circle(outputImg, (cx, cy), 5, (176, 255, 146), -1)
 
-            print(f"Detected {color_count} {color_name} objects")
+            print(f"Detected {colorCount} {colorName} objects")
 
         # Візуалізація
-        cv2.imshow("Original", img)
-        cv2.imshow("Detected Objects", output_img)
+        cv2.imshow("Original", originalImg)
+        cv2.imshow("Detected Objects", outputImg)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -76,9 +79,14 @@ if __name__ == "__main__":
     detector = ColorObjectDetector()
 
     colors = ""
-    for color_name in detector.color_ranges.keys():
-        colors += color_name + " "
+    for colorName in detector.color_ranges.keys():
+        colors += colorName + " "
 
     print(f"Available colors: {colors}")
-    selected_color = input("Choose an available color: ")
-    detector.process_image("testImg.jpg", target_colors=[selected_color])
+    selected_colors = input("Choose an available color: ")
+    actualSelected = []
+
+    for colorName in selected_colors.split():
+        actualSelected.append(colorName)
+
+    detector.process_image("testImg.jpg", target_colors=actualSelected)
