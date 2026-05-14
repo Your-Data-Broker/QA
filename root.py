@@ -89,4 +89,4 @@ if __name__ == "__main__":
     for colorName in selected_colors.split():
         actualSelected.append(colorName)
 
-    detector.process_image("testImg.jpg", target_colors=actualSelected)
+    detector.process_image("origImg.tiff", target_colors=actualSelected)
