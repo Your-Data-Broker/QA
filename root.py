@@ -1,92 +1,137 @@
 import cv2
 import numpy as np
+import ctypes
+import os
 
+# ---------------------------------------------------------
+# НАЛАШТУВАННЯ C-БІБЛІОТЕКИ (Місток через ctypes)
+# ---------------------------------------------------------
+# УВАГА: Розкоментувати, коли з'явиться скомпільований libcolorhunter.so
+'''
+lib_path = os.path.join(os.path.dirname(__file__), 'libcolorhunter.so')
+c_backend = ctypes.CDLL(lib_path)
 
-class ColorObjectDetector:
-    def __init__(self):
-        # HSV:
-        self.color_ranges = {
-            "red": [(np.array([0, 120, 70]), np.array([10, 255, 255]))],
-            "green": [(np.array([35, 50, 50]), np.array([85, 255, 255]))],
-            "blue": [(np.array([100, 150, 50]), np.array([124, 255, 255]))],
-            "yellow": [(np.array([20, 100, 100]), np.array([30, 255, 255]))],
-            "purple": [(np.array([125, 40, 40]), np.array([145, 255, 255]))],
-            "pink": [(np.array([146, 40, 40]), np.array([165, 255, 255]))],
-        }
+# Вказуємо суворі типи аргументів, щоб уникнути SegFault
+c_backend.process_single_pass.argtypes = [
+    ctypes.POINTER(ctypes.c_uint8),  # bgr_pixels (вхідне зображення)
+    ctypes.POINTER(ctypes.c_uint8),  # masks_out (вихідні маски)
+    ctypes.c_int,                    # width
+    ctypes.c_int,                    # height
+    ctypes.POINTER(ctypes.c_uint8),  # flat_lower_bounds (нижні межі)
+    ctypes.POINTER(ctypes.c_uint8),  # flat_upper_bounds (верхні межі)
+    ctypes.c_int                     # num_targets (кількість кольорів)
+]
+'''
 
-    def process_image(self, image_path, target_colors):
-        originalImg = cv2.imread(image_path)
-        if originalImg is None:
-            print(f"Помилка: Не вдалося завантажити {image_path}")
-            return
+# ---------------------------------------------------------
+# КОНСТАНТИ
+# ---------------------------------------------------------
+# Формат: назва -> (нижня межа HSV, верхня межа HSV)
+# Усі масиви мають тип uint8, як і очікує C.
+COLOR_RANGES = {
+    "red": (np.array([0, 120, 70], dtype=np.uint8), np.array([10, 255, 255], dtype=np.uint8)),
+    "green": (np.array([35, 50, 50], dtype=np.uint8), np.array([85, 255, 255], dtype=np.uint8)),
+    "blue": (np.array([100, 150, 50], dtype=np.uint8), np.array([124, 255, 255], dtype=np.uint8)),
+    "yellow": (np.array([20, 100, 100], dtype=np.uint8), np.array([30, 255, 255], dtype=np.uint8)),
+    "purple": (np.array([125, 40, 40], dtype=np.uint8), np.array([145, 255, 255], dtype=np.uint8)),
+    "pink": (np.array([146, 40, 40], dtype=np.uint8), np.array([165, 255, 255], dtype=np.uint8)),
+}
 
-        # розмиття для точніших контурів
+# ---------------------------------------------------------
+# ФУНКЦІЇ-ЗАГЛУШКИ (Поки працює на OpenCV, чекає на C)
+# ---------------------------------------------------------
+def call_backend_single_pass(bgr_img, target_colors):
+    """
+    Ця функція готує пам'ять і передає вказівники у C.
+    Зараз вона симулює роботу C-коду за допомогою звичайного OpenCV.
+    """
+    height, width, _ = bgr_img.shape
+    num_targets = len(target_colors)
+    
+    # 1. Готуємо пам'ять для результату: 3D масив масок (Колір, Висота, Ширина)
+    # np.zeros гарантує C-contiguous блок пам'яті (заповнений нулями)
+    masks_out = np.zeros((num_targets, height, width), dtype=np.uint8)
+    
+    # Готуємо плоскі масиви меж для C (щоб передати їх як прості uint8_t вказівники)
+    flat_lower = np.concatenate([COLOR_RANGES[c][0] for c in target_colors])
+    flat_upper = np.concatenate([COLOR_RANGES[c][1] for c in target_colors])
+    
+    # ========================================================
+    # СИМУЛЯЦІЯ МАЙБУТНЬОГО ВИКЛИКУ C-БІБЛІОТЕКИ
+    # (Коли C-код буде готовий, ми замінимо блок нижче на виклик c_backend)
+    
+    hsv_sim = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2HSV)
+    for i, color_name in enumerate(target_colors):
+        lower, upper = COLOR_RANGES[color_name]
+        masks_out[i] = cv2.inRange(hsv_sim, lower, upper)
+    # ========================================================
+    
+    return masks_out
 
-        img = cv2.GaussianBlur(originalImg, (5, 5), 0)
+# ---------------------------------------------------------
+# OPEN-CV ФРОНТЕНД (Малювання та UI)
+# ---------------------------------------------------------
+def draw_objects_and_count(mask, output_img, color_name):
+    """Виконує топологічний пошук контурів (залишаємо на стороні OpenCV)"""
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    count = 0
+    for contour in contours:
+        if cv2.contourArea(contour) < 500: # Ігнор шумів
+            continue
+            
+        count += 1
+        M = cv2.moments(contour)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+            
+            # Малюємо
+            cv2.drawContours(output_img, [contour], -1, (0, 255, 0), 2)
+            cv2.circle(output_img, (cx, cy), 5, (176, 255, 146), -1)
+            
+    print(f"Detected {count} {color_name} objects")
 
-        # конвертування BGR в HSV
+def process_image(image_path, target_colors):
+    original_img = cv2.imread(image_path)
+    if original_img is None:
+        print(f"Помилка: Не вдалося завантажити {image_path}")
+        return
+        
+    # Блюр залишаємо в Python (це попередня обробка)
+    img_blurred = cv2.GaussianBlur(original_img, (5, 5), 0)
+    
+    # Гарантуємо, що зображення лежить суцільним шматком у пам'яті
+    if not img_blurred.flags['C_CONTIGUOUS']:
+        img_blurred = np.ascontiguousarray(img_blurred)
+        
+    output_img = original_img.copy()
+    
+    # ВИКЛИК БЕКЕНДУ (Твій майбутній C/ASM код)
+    # Ми передаємо картинку 1 раз і отримуємо пачку готових масок
+    masks = call_backend_single_pass(img_blurred, target_colors)
+    
+    # Фронтенд-відмальовка результатів
+    for i, color_name in enumerate(target_colors):
+        draw_objects_and_count(masks[i], output_img, color_name)
+        
+    cv2.imshow("Original", original_img)
+    cv2.imshow("Detected Objects", output_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-        outputImg = originalImg.copy()
-
-        for colorName in target_colors:
-            if colorName not in self.color_ranges:
-                continue
-
-            # Створення маски для обраного кольору
-            mask = None
-            for lower, upper in self.color_ranges[colorName]:
-                if mask is None:
-                    mask = cv2.inRange(hsv, lower, upper)
-                else:
-                    mask = cv2.bitwise_or(mask, cv2.inRange(hsv, lower, upper))
-
-            # Пошук контурів
-            contours, _ = cv2.findContours(
-                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-
-            colorCount = 0
-            for contour in contours:
-                # Ігнорування маленьких фігур
-                if cv2.contourArea(contour) < 500:
-                    continue
-
-                colorCount += 1
-
-                # Визначення центру об'єкта (Moments)
-                M = cv2.moments(contour)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-
-                    # Малюємо контур та точку центру
-                    cv2.drawContours(outputImg, [contour], -1, (0, 255, 0), 2)
-                    cv2.circle(outputImg, (cx, cy), 5, (176, 255, 146), -1)
-
-            print(f"Detected {colorCount} {colorName} objects")
-
-        # Візуалізація
-        cv2.imshow("Original", originalImg)
-        cv2.imshow("Detected Objects", outputImg)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-
-# Використання
+# ---------------------------------------------------------
+# ТОЧКА ВХОДУ
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    detector = ColorObjectDetector()
-
-    colors = ""
-    for colorName in detector.color_ranges.keys():
-        colors += colorName + " "
-
-    print(f"Available colors: {colors}")
-    selected_colors = input("Choose an available color: ")
-    actualSelected = []
-
-    for colorName in selected_colors.split():
-        actualSelected.append(colorName)
-
-    detector.process_image("origImg.tiff", target_colors=actualSelected)
+    available_colors = " ".join(COLOR_RANGES.keys())
+    print(f"Available colors: {available_colors}")
+    
+    user_input = input("Choose available colors (space separated): ")
+    selected_colors = [c for c in user_input.split() if c in COLOR_RANGES]
+    
+    if not selected_colors:
+        print("No valid colors selected. Exiting.")
+    else:
+        # Для тесту потрібна реальна картинка testImg.jpg
+        process_image("testImg.jpg", target_colors=selected_colors)
