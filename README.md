@@ -9,4 +9,4 @@
 
 # Changing the test image:
 #   Change the source code in root.py (path to image)
-#   Move the image you want from testImages to one, where root.py located
+#   Move the image you want from "testImages" directory to one, where root.py located
