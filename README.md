@@ -2,7 +2,7 @@
 
 # Assembling the .so library:
 #   nasm -f elf64 backend.s
-#   gcc -shared backend.o -o backend
+#   gcc -shared backend.so -o backend.o
 
 # Usage:
 #   python3 root.py
