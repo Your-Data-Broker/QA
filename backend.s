@@ -12,19 +12,20 @@ process_single_pass:
     ; R8 = flat_upper_bounds
     ; R9 = num_targets
 
-    ; Зберігаємо усі значення регістрів rbp, rbx, r12-15 у стек
+    ; Зберігаємо усі значення регістрів rbp, rbx, r9, r12-15 у стек
     push rbp
     push rbx
     push r12
     push r13
     push r14
     push r15
+    push r9
     
     mov rbx, rcx ; rbx = flat_lower_bounds
     mov rbp, r8 ; rbp = flat_upper_bounds
 
     ; Використаємо вільний регістр R10 як ліміт для нашого циклу
-    mov r10, rdx       ; Копіюємо кількість пікселів в r10
+    mov r10, rdx ; Копіюємо кількість пікселів в r10
 
     ; Готуємо індекс (наш лічильник i = 0)
     ; Використаємо вільний регістр rcx
@@ -32,8 +33,8 @@ process_single_pass:
 
 .loop_start:
     ; Перевірка (якщо i == total_pixels, то вихід)
-    cmp rcx, r10       ; Порівнюємо rax та r10
-    jge .done          ; Jump if Greater or Equal, стрибаємо на мітку .done
+    cmp rcx, r10 ; Порівнюємо rax та r10
+    jge .done ; Jump if Greater or Equal, стрибаємо на мітку .done
 
     ; Тіло циклу (BGR -> HSV, створення маски тощо)
     lea rax, [rcx + rcx*2] ; Записуємо в rax потрійне значення rcx
@@ -149,41 +150,56 @@ process_single_pass:
       mov r13, 0 ; Saturation = 0
       ; Value дорівнює MAX, тож вже лежить в r12
 
-    .save_pixel_to_mask: ; Створюємо чорно-білу маску, яку потім передамо в Python
+    .save_pixel_to_mask:
+      xor r14, r14 ; Лічильник цілей (target_idx = 0)
 
-      ; 1. Перевірка Hue
-      cmp r15b, byte [rbx] ; Порівнюємо Hue (r15b) з flat_lower_bounds[0]
-      jb .write_zero ; Якщо менше - колір не підходить
-      cmp r15b, byte [rbp] ; Порівнюємо Hue (r15b) з flat_upper_bounds[0]
-      ja .write_zero ; Якщо більше - колір не підходить
+      .target_loop:
+        cmp r14, [rsp]  ; Порівнюємо target_idx з num_targets (r9)
+        jge .end_targets_loop ; Якщо перевірили всі кольори - виходимо з внутрішнього циклу
 
-      ; 2. Перевірка Saturation
-      cmp r13b, byte [rbx + 1] ; Порівнюємо Saturation (r13b) з flat_lower_bounds[1]
-      jb .write_zero
-      cmp r13b, byte [rbp + 1] ; Порівнюємо Saturation (r13b) з flat_upper_bounds[1]
-      ja .write_zero
+        ; Рахуємо зміщення для масивів лімітів (target_idx * 3)
+        lea rax, [r14 + r14*2]
 
-      ; 3. Перевірка Value
-      cmp r12b, byte [rbx + 2] ; Порівнюємо Value (r12b) з flat_lower_bounds[2]
-      jb .write_zero
-      cmp r12b, byte [rbp + 2] ; Порівнюємо Value (r12b) з flat_upper_bounds[2]
-      ja .write_zero
+        ; Перевірка Hue
+        cmp r15b, byte [rbx + rax] ; Порівнюємо з lower_bounds[target_idx]
+        jb .next_target ; Якщо не підходить - переходимо на наступний колір
+        cmp r15b, byte [rbp + rax] ; Порівнюємо з upper_bounds[target_idx]
+        ja .next_target
 
-      .write_255: ; Якщо піксель пройшов, замальовуємо його білим
-      mov byte [rsi + rcx], 255 ; Пишемо білий колір у маску ([rsi + rcx])
-      jmp .end_mask_write ; Пропускаємо запис нуля
+        ; Перевірка Saturation (так само, тільки зсув на +1)
+        cmp r13b, byte [rbx + rax + 1]
+        jb .next_target
+        cmp r13b, byte [rbp + rax + 1]
+        ja .next_target
 
-      .write_zero: ; Якщо піксель не пройшов, замальовуємо його чорним
-      mov byte [rsi + rcx], 0 ; Пишемо чорний колір у маску
+        ; Перевірка Value (теж, тільки тепер +2)
+        cmp r12b, byte [rbx + rax + 2]
+        jb .next_target
+        cmp r12b, byte [rbp + rax + 2]
+        ja .next_target
 
-    .end_mask_write: ; Просто продовжуємо виконання
+        ; Якщо ми досі не на наступному кольрі, то колір підійшов, отже пишемо 255 за адресою
+        ; Формула адреси: target_idx * total_pixels + pixel_idx
+
+        mov rax, r14 ; Переміщуємо target_idx в rax для зручного рахунку
+        imul rax, r10 ; rax = target_idx * total_pixels (перестрибуємо на потрібний шар)
+        add rax, rcx ; додаємо поточний піксель (rcx)
+
+        mov byte [rsi + rax], 255 ; Робимо піксель білим
+
+      .next_target:
+        inc r14 ; target_idx++
+        jmp .target_loop ; йдемо перевіряти наступний колір для цього ж пікселя
+
+    .end_targets_loop: ; Просто продовжуємо виконання
 
     ; Крок циклу
     inc rcx ; i++
     jmp .loop_start ; Повертаємось на початок циклу
 
 .done: ; Вихід з функції
-    ; Повертаємо всі значення регістрів rbp, rbx, r12-15 назад (у зворотньому порядку через LIFO)
+    ; Повертаємо всі значення регістрів rbp, rbx, r9, r12-15 назад (у зворотньому порядку через LIFO)
+    pop r9
     pop r15
     pop r14
     pop r13
