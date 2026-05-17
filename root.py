@@ -11,8 +11,7 @@ backend = ctypes.CDLL(lib_path)
 backend.process_single_pass.argtypes = [
     ctypes.POINTER(ctypes.c_uint8),  # bgr_pixels (вхідне зображення)
     ctypes.POINTER(ctypes.c_uint8),  # masks_out (вихідні маски)
-    ctypes.c_int,                    # width (ширина)
-    ctypes.c_int,                    # height (висота)
+    ctypes.c_int,                    # total_pixels (кількість пікселів)
     ctypes.POINTER(ctypes.c_uint8),  # flat_lower_bounds (нижні межі)
     ctypes.POINTER(ctypes.c_uint8),  # flat_upper_bounds (верхні межі)
     ctypes.c_int                     # num_targets (кількість кольорів)
@@ -43,13 +42,13 @@ def call_backend_single_pass(bgr_img, target_colors):
     # Готуємо плоскі масиви меж для ASM (щоб передати їх як прості uint8_t вказівники)
     flat_lower = np.concatenate([COLOR_RANGES[c][0] for c in target_colors])
     flat_upper = np.concatenate([COLOR_RANGES[c][1] for c in target_colors])
+    total_pixels = height * width
     
     # Викликаємо ASM код
     backend.process_single_pass(
         bgr_img.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         masks_out.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
-        width,
-        height,
+        total_pixels,
         flat_lower.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         flat_upper.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         num_targets
@@ -119,4 +118,4 @@ if __name__ == "__main__":
     if not selected_colors:
         print("No valid colors selected. Exiting.")
     else:
-        process_image("origImg.tiff", target_colors=selected_colors)
+        process_image("origImg.jpg", target_colors=selected_colors)
